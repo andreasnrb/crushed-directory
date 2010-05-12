@@ -7,12 +7,22 @@
  Author: Cyonite Systems
  Author URI: http://cyonitesystems.com/
  */
+
+if(!class_exists("AoiSOra")){
+	add_action('after_plugin_row_'.plugin_basename(__FILE__),'after_aoisora_plugin_row', 10, 2 );					
+	function after_aoisora_plugin_row($plugin_file, $plugin_data){
+		echo '<tr class="error" style=""><td colspan="3" class="" style=""><div class="" style="padding:3px 3px 3px 3px;font-weight:bold;font-size:8pt;border:solid 1px #CC0000;background-color:#FFEBE8">Crushed Directory requires <a style="color:blue;text-decoration:underline;" href="http://artofwp.com/aoisora">PHP MVC For WordPress (AoiSora)</a></div></td></tr>';
+		deactivate_plugins(plugin_basename(__FILE__));
+	}
+	return;
+}
 loadApp(plugin_dir_path(__FILE__));
 class CrushedDirectory extends WpApplicationBase{
 	function CrushedDirectory(){
 		parent::WpApplicationBase('CrushedDirectory',__FILE__,false,false);
 		add_shortcode('yourplugins', array($this,'your_plugins_shortcode'));		
 	}
+	
 	function on_admin_menu(){
 		$pages= new AdminPages($this,'Directory','Directory',8,'CDirectoryAdmin');
 		$pages->addMenu();
@@ -20,6 +30,7 @@ class CrushedDirectory extends WpApplicationBase{
 		$pages->addSubmenu('Plugins','Plugins',8,'Directory','plugins');
 		$pages->addSubmenu('Mail Messages','Mail Messages',8,'Mail','mail');
 	}
+	
 	function on_init(){
 //		if(is_user_logged_in())
 		add_action( 'template_redirect', array($this,'update'));
@@ -29,6 +40,7 @@ class CrushedDirectory extends WpApplicationBase{
 		add_action( 'template_redirect', array($this,'downloadfiles'));
 		add_action('paypal',array($this,'paypal_payment_recieved'),1000,2);	
 	}
+	
 	function on_init_admin(){
 		if(defined('DOING_AJAX') && DOING_AJAX){
 			add_action('wp_ajax_nopriv_awpregister',array(&$this,'register'));
@@ -78,9 +90,11 @@ class CrushedDirectory extends WpApplicationBase{
 		);
 		register_post_type( 'mailmessage' , $args );
 	}
+	
 	function instantiate(){
 		new CrushedDirectory();
 	}
+	
 	function update_plugin_meta($id){
 		$access_levels=$_POST['access_levels'];
 		if(sizeof($access_levels)>0)
@@ -114,11 +128,13 @@ class CrushedDirectory extends WpApplicationBase{
 			</script>
 		<?php 	}
 	}
+	
 	function edit_group_access_restrictions($plugin){
 		$group_access=get_post_meta($plugin->ID,'group_access');
 		$group_access=$group_access[0];
 		$this->group_access_restrictions($group_access);
 	}
+	
 	function group_access_restrictions($group_access=false){
 		$groups=Groups::get_groups();
 		?>
@@ -159,6 +175,7 @@ class CrushedDirectory extends WpApplicationBase{
 </tr>
 		<?php
 	}
+	
 	function paypal_payment_recieved($txn,$post){
 		global $membersext;
 		$encoded_id=$post['item_number'];
@@ -208,9 +225,11 @@ class CrushedDirectory extends WpApplicationBase{
 		$button['plugin_access']=$_POST['plugin_access'];
 		return $button;
 	}
+	
 	function paypal_edit($button){
 		$this->paypal($button->plugin_access);
 	}
+	
 	function paypal($plugin_name){
 		$plugins=query_posts('post_type=plugin');
 		?>
