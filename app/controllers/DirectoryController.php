@@ -23,7 +23,7 @@ class DirectoryController extends BaseController{
 			$post['post_author']=$currentuser->ID;
 			$post['post_excerpt']=esc_html($_POST['plugin_excerpt']);
 			$post['post_type']='plugin';
-			$post['post_content']=$_POST['plugin_excerpt'];
+			$post['post_content']=$_POST['plugin_description'];
 			$post['post_name']=$_POST['plugin-id'];
 			$post['post_title']=$_POST['plugin-name'];
 			$post['post_date_gmt']=current_time('mysql');
@@ -45,7 +45,7 @@ class DirectoryController extends BaseController{
 			$post['post_author']=$currentuser->ID;
 			$post['post_excerpt']=esc_html($_POST['plugin_excerpt']);
 			$post['post_type']='plugin';
-			$post['post_content']=$_POST['plugin_excerpt'];
+			$post['post_content']=$_POST['plugin_description'];
 			$post['post_name']=$_GET['plugin'];
 			$post['post_title']=$_POST['plugin-name'];
 			$post['post_date_gmt']=current_time('mysql');

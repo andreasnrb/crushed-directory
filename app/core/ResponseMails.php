@@ -22,7 +22,7 @@ class ResponseMails{
 	static function send_mails($data,$event){
 		$mails=self::get_mails_for_event($event);
 		paypal_log_info('mails',print_r($mails,true));
-		$from=(object)array('name'=>'Shop Art Of WordPress', 'email'=>'andreas@itn.se');
+		$from=(object)array('name'=>'Shop Art Of WordPress', 'email'=>'support@artofwp.com');
 		foreach($mails as $mail){
 			$subject=$mail->post_title;
 			paypal_log_info('mailsubject',$subject);			

@@ -49,9 +49,15 @@
 					<tr>
 					<td colspan="2">
 					<textarea id="plugin_excerpt" name="plugin_excerpt" cols="100"><?php echo stripslashes($plugin->excerpt)?></textarea><br />
-					<?php _e('<strong>Required:</strong> Enter a shortdescription for the plugin.', 'crusheddirectory'); ?>
+					<?php _e('<strong>Required:</strong> Enter a non-HTML shortdescription for the plugin.', 'crusheddirectory'); ?>
 					</td>
 					</tr>
+					<tr>
+					<td colspan="2">
+					<textarea id="plugin_description" name="plugin_description" cols="100"><?php echo stripslashes($plugin->description)?></textarea><br />
+					<?php _e('<strong>Required:</strong> HTML description for the plugin.', 'crusheddirectory'); ?>
+					</td>
+					</tr>					
 					<?php do_action('new-plugin-form');?>
 					</table><!-- .form-table -->
 

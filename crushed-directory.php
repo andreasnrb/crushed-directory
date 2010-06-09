@@ -20,7 +20,37 @@ loadApp(plugin_dir_path(__FILE__));
 class CrushedDirectory extends WpApplicationBase{
 	function CrushedDirectory(){
 		parent::WpApplicationBase('CrushedDirectory',__FILE__,false,false);
-		add_shortcode('yourplugins', array($this,'your_plugins_shortcode'));		
+
+		add_shortcode('yourplugins', array(&$this,'your_plugins_shortcode'));
+		add_shortcode('plugin', array(&$this,'plugin_file_shortcode'));	
+		add_shortcode('your_profile', array(&$this,'your_profile_shortcode'));
+		wp_register_style('crushed-directory',plugins_url('crushed-directory/css/style.css'));
+		wp_enqueue_style('crushed-directory');							
+		/*global $wpdb;
+		include(ABSPATH.'/wp-includes/pluggable.php');
+		$user=get_user_by_email("johan@skumbanan.se");
+				$plugin_access=(array)get_usermeta($user->ID,'plugin_access');
+		if($plugin_access){
+			if(array_search('wp-affiliate-shop',$plugin_access)===false){
+//					unset($plugin_access[0]);					
+				$plugin_access['key']="c55a704ced8b";//substr(hash('md5',$user->ID.time()),0,12);
+				ksort($plugin_access);
+				update_usermeta($user->ID,'plugin_access',$plugin_access);			
+			}
+		}*/
+//		$users = $wpdb->get_results("SELECT ID FROM $wpdb->users ORDER BY ID");		
+/*		foreach($users as $user){
+			$plugin_access=(array)get_usermeta($user->ID,'plugin_access');
+			if($plugin_access){
+				if(array_search('wp-affiliate-shop',$plugin_access)===false){
+//					unset($plugin_access[0]);					
+					if($user->Email=="andreas.nurbo+test@gmail.com")
+						$plugin_access['key']="33e41e9078e6";//substr(hash('md5',$user->ID.time()),0,12);
+					ksort($plugin_access);
+					update_usermeta($user->ID,'plugin_access',$plugin_access);			
+				}
+			}
+		}*/
 	}
 	
 	function on_admin_menu(){
@@ -188,7 +218,8 @@ class CrushedDirectory extends WpApplicationBase{
 		
 		$plugin_access=(array)get_usermeta($user->ID,'plugin_access');
 		if(array_search($button->plugin_access,$plugin_access)===false)
-			$plugin_access[$button->plugin_access]['key']=substr(hash('md5',$user->ID.time()),0,12);
+			$plugin_access['key']=substr(hash('md5',$user->ID.time()),0,12);
+//			$plugin_access[$button->plugin_access]['key']=substr(hash('md5',$user->ID.time()),0,12);
 		$plugin_access[$button->plugin_access]['sites']=array();
 		ksort($plugin_access);
 		update_usermeta($user->ID,'plugin_access',$plugin_access);
@@ -336,10 +367,10 @@ class CrushedDirectory extends WpApplicationBase{
 				$fileOptions=get_option($id);
 				if(!$fileOptions)
 					wp_die('The requested file does not exist');
-				$user=get_user_by_email(urldecode($_GET['email']));
+				$user=get_user_by_email($_GET['email']);
 				if(!isset($user) || empty($user)){
 					header('HTTP/1.1 403 Forbidden');
-					die('You are not allowed to download this file. User does not have access '.urldecode($_GET['email']));
+					die('You are not allowed to download this file. User does not have access '.$_GET['email']);
 				}
 				
 				$siteid=$this->get_siteid();
@@ -348,22 +379,23 @@ class CrushedDirectory extends WpApplicationBase{
 					$domain=Http::get_request_domain();
 					$ip=Http::get_IP();
 					die('You are not allowed to download this file from '.$ip.' && '.$domain);
-				}				
+				}
 				$plugin_access=get_usermeta($user->ID,'plugin_access');
 				$user_sites=$plugin_access[$id]['sites'];
 				
+				/*
 				if(!Plugins::has_access($id,$user->ID)){
 					header('HTTP/1.1 403 Forbidden');
 					die('You do not have access to this file.');
-				}
+				}*/
 				if(!array_key_exists($siteid,$user_sites)){
 					header('HTTP/1.1 403 Forbidden');
 					$domain=Http::get_request_domain();
 					$ip=Http::get_IP();
-					$extra = print_r($_SERVER,true);
-					$extra2=print_r($_REQUEST,true);
-					die('The site are not allowed to download this file. From '.$ip.' and '.$domain.' extra '.$extra.' \n\r extra2 '.$extra2);
-				}				
+//					$extra = print_r($_SERVER,true);
+//					$extra2=print_r($_REQUEST,true);
+					die('The site are not allowed to download this file. From '.$ip.' and '.$domain);//.' extra '.$extra.' \n\r extra2 '.$extra2);
+				}
 				$canAccess=false;
 				$groups=$fileOptions['groups'];
 				foreach($groups as $group_id)
@@ -426,7 +458,21 @@ class CrushedDirectory extends WpApplicationBase{
 			}
 		}
 		function update(){
-			if(isset($_GET['update']) && $_GET['update']=='plugin'){
+			if(isset($_GET['update']) && $_GET['update']=='plugin_information'){
+				if (!isset($_REQUEST['id']) || $disable_update)
+					return;				
+				$id=$_REQUEST['id'];
+				$fileOptions=get_option($id);
+				$filename=$id.'.txt';//.$fileOptions['version'];
+				$filepath=WP_CONTENT_DIR."/uploads/versions/$filename";				
+				header('HTTP/1.1 200 OK');
+				header('Content-Type: text/html');
+				header('Content-Length:'. filesize($filepath));
+				ob_clean();
+				flush();
+				readfile($filepath);
+				exit;
+			}else if(isset($_GET['update']) && $_GET['update']=='plugin'){
 				// Set this to TRUE while editing and testing this file
 				$disable_update = false;
 								
@@ -439,37 +485,49 @@ class CrushedDirectory extends WpApplicationBase{
 				$user=get_user_by_email($_REQUEST['email']);
 				$plugin_access=get_usermeta($user->ID,'plugin_access');	
 				$user_sites=$plugin_access[$id]['sites'];
-				$has_access=true;
-				if(!Plugins::has_access($id,$user->ID) && !array_key_exists($siteid,$user_sites))
+//				$has_access=true;
+//				if(!Plugins::has_access($id,$user->ID) && !array_key_exists($siteid,$user_sites))
+//					$has_access=false;
+				$has_access=false;
+				$groups=$fileOptions['groups'];
+				foreach($groups as $group_id)
+					if(Memberships::is_member_of_group($user->ID,$group_id))
+						$has_access=true;
+				/*if(isset($user_sites['0e84e3332f31f2154ca869ab31bd85f0'])){
+					unset($user_sites['0e84e3332f31f2154ca869ab31bd85f0']);
+					$user_sites['f14ad812338a81821b48d674c5815e10']='testing.dd';
+					$plugin_access[$id]['sites']=$user_sites;					
+					update_usermeta($user->ID,'plugin_access',$plugin_access);					
+				}*/
+						
+				if(!array_key_exists($siteid,$user_sites)){
 					$has_access=false;
+				}
 				$filename=basename($fileOptions['url']);
 
 				$version = array(
 						'has_access' => $has_access,
 						'version' => $fileOptions['version'],
 						'url' => "http://artofwp.com?update_file=$id&email={email}&key={key}",
-						'site' =>'http://artofwp.com'
-				);
+						'site' =>'http://artofwp.com',
+						'sites' => print_r($plugin_access,true).' no site: '.$nosite
+						);
 				die(serialize($version));
 			}
 		}
-		function register(){
+		function register(){			
 			$id=trim($_GET['id']);
 			$regkey=trim($_GET['key']);
 			$user_email=trim($_GET['email']);
 			$user=get_user_by_email($user_email);
-			if(!$user)
-				die($_GET['callback'].'('.json_encode(array('status'=>'error','message'=>'No user with this email '.$user_email)).')');
-			$plugin_access=get_usermeta($user->ID,'plugin_access');
-			if(!array_key_exists($id,$plugin_access))
-				die($_GET['callback'].'('.json_encode(array('status'=>'error','message'=>'This user account don\'t have access.'.print_r($plugin_access,true))).')');
-			if($regkey!=$plugin_access[$id]['key'])
-				die($_GET['callback'].'('.json_encode(array('status'=>'error','type'=>0, 'message'=>'The supplied registration key does not match this user account.')).')');					
-					
 			$domain=Http::get_request_domain();
 			$siteid=$this->get_siteid();
 			if(!$siteid)
 				die($_GET['callback'].'('.json_encode(array('status'=>'error','message'=>'You have to supply your email and registration key.')).')');
+							
+			if(!$user)
+				die($_GET['callback'].'('.json_encode(array('status'=>'error','message'=>'No user with this email '.$user_email)).')');
+
 			$group_access=Plugins::get_group_access($id);
 			$memberships=Memberships::get_memberships_for_user($user->ID);
 			$canHaveXNbrOfSites=false;
@@ -478,6 +536,16 @@ class CrushedDirectory extends WpApplicationBase{
 					$canHaveXNbrOfSites=$extra['sites'];
 			if(!$canHaveXNbrOfSites)
 				die($_GET['callback'].'('.json_encode(array('status'=>'error','message'=>'You don\'t have the right to register this plugin with this site.')).')');
+				
+			$plugin_access=get_usermeta($user->ID,'plugin_access');
+			var_dump($plugin_access);
+/*			if(!array_key_exists($id,$plugin_access))
+				die($_GET['callback'].'('.json_encode(array('status'=>'error','message'=>'This user account don\'t have access.')).')');
+*/
+			if($regkey!=$plugin_access['key'])
+				die($_GET['callback'].'('.json_encode(array('status'=>'error','type'=>0, 'message'=>'The supplied registration key does not match this user account.')).')');
+
+
 			
 			$user_sites=$plugin_access[$id]['sites'];
 			if(!is_array($user_sites) && empty($user_sites))
@@ -515,14 +583,48 @@ class CrushedDirectory extends WpApplicationBase{
 			update_usermeta($user->ID,'plugin_access',$plugin_access);
 			die($_GET['callback'].'('.json_encode(array('status'=>'ok','domain'=>Http::get_request_domain(),'ip'=>Http::get_IP(),'user_id'=>$user->ID,'email'=>$user_email,'key'=>$regkey)).')');
 		}
+		function your_profile_shortcode( $attr){		
+			include("app/views/shortcodes/your-profile.php");
+		}
 		function your_plugins_shortcode( $attr ) {
 			global $current_user;
 			/* Set up our default attributes. */
 			//$defaults = array('id' => '');
 			/* Merge the input attributes and the defaults. */
 			//extract( shortcode_atts( $defaults, $attr ) );
-			$plugins=Plugins::plugins_for_user($current_user->ID);
+			$plugin_access=get_usermeta($current_user->ID,'plugin_access');			
+			$key=$plugin_access['key'];
+			$plugins=Plugins::plugins_for_current_user();
 			include("app/views/shortcodes/your-plugins.php");
 		}
+		function plugin_file_shortcode($atts){
+			global $current_user;			
+			$secure=true;
+			extract($atts);
+			$plugin=Plugins::get_plugin($id);
+			$file=array_pop($plugin->files);
+			$plugin_access=get_usermeta($current_user->ID,'plugin_access');	
+			$user_sites=$plugin_access[$id]['sites'];
+
+			$has_access=false;
+			$fileOptions=get_option($id);			
+			$groups=$fileOptions['groups'];
+			foreach($groups as $group_id)
+				if(Memberships::is_member_of_group($user->ID,$group_id))
+					$plugin->has_access=true;						
+			include("app/views/shortcodes/plugin.php");			
+		}
 }
+/*# BEGIN PHPMVC
+<IfModule mod_rewrite.c>
+RewriteEngine On
+RewriteBase /
+RewriteCond %{REQUEST_METHOD} !GET
+RewriteCond %{REQUEST_FILENAME} !-f
+RewriteCond %{REQUEST_FILENAME} !-d
+RewriteRule ^(.+)/(.+)$ /wp-content/plugins/AoiSora/preroute.php?controller=$1&action=$2 [L]
+</IfModule>
+# END PHPMVC
+
+*/
 CrushedDirectory::instantiate();
