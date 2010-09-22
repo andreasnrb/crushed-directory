@@ -3,16 +3,18 @@
  Plugin Name: CrushedDirectory
  Plugin URI: http://artofwp.com/registryplugin
  Description: xxxx
- Version: 10.3
+ Version: 10.9.1
  Author: Cyonite Systems
  Author URI: http://cyonitesystems.com/
  */
 
-if(!class_exists("AoiSOra")){
-	add_action('after_plugin_row_'.plugin_basename(__FILE__),'after_aoisora_plugin_row', 10, 2 );					
-	function after_aoisora_plugin_row($plugin_file, $plugin_data){
+if(!class_exists("AoiSora")){
+	if(is_admin()){
+	add_action('after_plugin_row_'.plugin_basename(__FILE__),'after_cr_plugin_row', 10, 2 );					
+	function after_cr_plugin_row($plugin_file, $plugin_data){
 		echo '<tr class="error" style=""><td colspan="3" class="" style=""><div class="" style="padding:3px 3px 3px 3px;font-weight:bold;font-size:8pt;border:solid 1px #CC0000;background-color:#FFEBE8">Crushed Directory requires <a style="color:blue;text-decoration:underline;" href="http://artofwp.com/aoisora">PHP MVC For WordPress (AoiSora)</a></div></td></tr>';
-		deactivate_plugins(plugin_basename(__FILE__));
+		//deactivate_plugins(plugin_basename(__FILE__));
+	}
 	}
 	return;
 }
@@ -20,58 +22,26 @@ loadApp(plugin_dir_path(__FILE__));
 class CrushedDirectory extends WpApplicationBase{
 	function CrushedDirectory(){
 		parent::WpApplicationBase('CrushedDirectory',__FILE__,false,false);
-
 		add_shortcode('yourplugins', array(&$this,'your_plugins_shortcode'));
 		add_shortcode('plugin', array(&$this,'plugin_file_shortcode'));	
 		add_shortcode('your_profile', array(&$this,'your_profile_shortcode'));
 		wp_register_style('crushed-directory',plugins_url('crushed-directory/css/style.css'));
-		wp_enqueue_style('crushed-directory');							
-		/*global $wpdb;
-		include(ABSPATH.'/wp-includes/pluggable.php');
-		$user=get_user_by_email("johan@skumbanan.se");
-				$plugin_access=(array)get_usermeta($user->ID,'plugin_access');
-		if($plugin_access){
-			if(array_search('wp-affiliate-shop',$plugin_access)===false){
-//					unset($plugin_access[0]);					
-				$plugin_access['key']="c55a704ced8b";//substr(hash('md5',$user->ID.time()),0,12);
-				ksort($plugin_access);
-				update_usermeta($user->ID,'plugin_access',$plugin_access);			
-			}
-		}*/
-//		$users = $wpdb->get_results("SELECT ID FROM $wpdb->users ORDER BY ID");		
-/*		foreach($users as $user){
-			$plugin_access=(array)get_usermeta($user->ID,'plugin_access');
-			if($plugin_access){
-				if(array_search('wp-affiliate-shop',$plugin_access)===false){
-//					unset($plugin_access[0]);					
-					if($user->Email=="andreas.nurbo+test@gmail.com")
-						$plugin_access['key']="33e41e9078e6";//substr(hash('md5',$user->ID.time()),0,12);
-					ksort($plugin_access);
-					update_usermeta($user->ID,'plugin_access',$plugin_access);			
-				}
-			}
-		}*/
+		wp_enqueue_style('crushed-directory');
+		add_action('init',array(&$this,'on_init'));
+		add_action('admin_head', array(&$this,'remove_menu'),20000000000);		
+		add_action('admin_head', array(&$this,'remove_submenu'),10000000000);
+
 	}
 	
 	function on_admin_menu(){
-		$pages= new AdminPages($this,'Directory','Directory',8,'CDirectoryAdmin');
-		$pages->addMenu();
-		$pages->addSubmenu('Overview','Overview',8,'CDirectoryAdmin','overview');
-		$pages->addSubmenu('Plugins','Plugins',8,'Directory','plugins');
-		$pages->addSubmenu('Mail Messages','Mail Messages',8,'Mail','mail');
+		add_menu_page( 'Overview', 'CrushedDir', 'activate_plugins', 'crusheddirectory', array($this,'view_overview'));
+		add_submenu_page( 'crusheddirectory', 'Overview', 'Overview','activate_plugins', 'crusheddirectory', array($this,'view_overview'));		
 	}
-	
+	function view_overview(){
+		include('app/views/CDirectoryAdmin/overview.php');
+	}
 	function on_init(){
 //		if(is_user_logged_in())
-		add_action( 'template_redirect', array($this,'update'));
-		add_action( 'template_redirect', array($this,'update_file'));
-		add_action( 'template_redirect', array($this,'free_update'));
-		add_action( 'template_redirect', array($this,'free_update_file'));
-		add_action( 'template_redirect', array($this,'downloadfiles'));
-		add_action('paypal',array($this,'paypal_payment_recieved'),1000,2);	
-	}
-	
-	function on_init_admin(){
 		if(defined('DOING_AJAX') && DOING_AJAX){
 			add_action('wp_ajax_nopriv_awpregister',array(&$this,'register'));
 			add_action('wp_ajax_nopriv_awpunregister',array(&$this,'unregister'));
@@ -81,6 +51,117 @@ class CrushedDirectory extends WpApplicationBase{
 			}
 			return;
 		}
+		add_action( 'template_redirect', array(&$this,'update'));
+		add_action( 'template_redirect', array(&$this,'update_file'));
+		add_action( 'template_redirect', array(&$this,'free_update'));
+		add_action( 'template_redirect', array(&$this,'free_update_file'));
+		add_action( 'template_redirect', array(&$this,'downloadfiles'));
+		add_action('paypal',array($this,'paypal_log_transaction'),1,2);
+		add_action('paypal-completed',array(&$this,'paypal_payment_recieved'),1000,2);
+		add_action('paypal-pending',array(&$this,'paypal_payment_pending'),10,2);
+		add_filter('paypal_checkout',array(&$this,'user_has_purchased'));
+		add_filter('paypal_cancelled',array(&$this,'user_has_abandon_purchase'));
+		$args = array (
+			'labels' => array(
+				'name' => __( 'Products' ),
+				'singular_name' => __( 'Product' ),
+				'add_new' => __( 'Add New' ),
+				'add_new_item' => __( 'Add New Product' ),
+				'edit' => __( 'Edit' ),
+				'edit_item' => __( 'Edit Product' ),
+				'new_item' => __( 'New Product' ),
+				'view' => __( 'View Product' ),
+				'view_item' => __( 'View Product' ),
+				'search_items' => __( 'Search Products' ),
+				'not_found' => __( 'No products found' ),
+				'not_found_in_trash' => __( 'No products found in Trash' ),
+				'parent' => __( 'Parent Product' ),
+			),
+			'public'=>true,
+			'show_ui' => true,			
+		    'hierarchical' => false,
+			'publicly_queryable'=>true,
+			'exclude_from_search' => true,
+			'supports'=>array( 'title', 'editor', 'excerpt', 'thumbnail' ),
+			'rewrite'=> array('slug' => 'products'),
+			'register_meta_box_cb' => array(&$this,'setup_product_meta_boxes')		
+		);
+		register_post_type( 'product' , $args );
+		$args = array (
+			'labels' => array(
+				'name' => __( 'Messages' ),
+				'singular_name' => __( 'Message' ),
+				'add_new' => __( 'Add New' ),
+				'add_new_item' => __( 'Add New Message' ),
+				'edit' => __( 'Edit' ),
+				'edit_item' => __( 'Edit Message' ),
+				'new_item' => __( 'New Message' ),
+				'view' => __( 'View Message' ),
+				'view_item' => __( 'View Message' ),
+				'search_items' => __( 'Search Messages' ),
+				'not_found' => __( 'No messages found' ),
+				'not_found_in_trash' => __( 'No messages found in Trash' ),
+				'parent' => __( 'Parent Message' ),
+				),		
+			'public'=>false,
+			'show_ui' => true,
+		    'capability_type' => 'post',
+		    'hierarchical' => false,
+			'publicly_queryable'=>false,
+			'exclude_from_search' => true,
+			'supports'=>array( 'title', 'editor'),
+			'rewrite'=> array('slug' => 'messages'),
+			'register_meta_box_cb' => array(&$this,'setup_message_meta_boxes')				
+		);
+		register_post_type( 'message' , $args );
+		
+		$args = array (
+			'labels' => array(
+				'name' => __( 'Transactions' ),
+				'singular_name' => __( 'Transaction' ),
+/*				'add_new' => __( 'Add New' ),
+				'add_new_item' => __( 'Add New Transaction' ),
+				'edit' => __( 'Edit' ),
+				'edit_item' => __( 'Edit Transaction' ),
+				'new_item' => __( 'New Transaction' ),*/
+				'view' => __( 'View Transaction' ),
+				'view_item' => __( 'View Transaction' ),
+				'search_items' => __( 'Search Transaction' ),
+				'not_found' => __( 'No transactions found' ),
+				'not_found_in_trash' => __( 'No transactions found in Trash' ),
+				'parent' => __( 'Parent Transaction' ),
+				),
+			'public'=>false,
+			'show_ui' => true,
+		    'capability_type' => 'post',
+		    'hierarchical' => false,
+			'publicly_queryable'=>false,
+			'exclude_from_search' => true,
+		'supports'=>array( 'title', 'editor','custom-fields','author'),
+		'rewrite'=> array('slug' => 'transactions')	
+		);
+		
+		register_post_type( 'transaction' , $args );
+		$payment_status=array('Canceled_Reversal','Completed','Created','Denied','Expired','Failed','Pending','Refunded','Reversed','Processed','Voided');
+		foreach($payment_status as $status)
+			register_post_status( strtolower($status), array(
+				'label'       => _x( $status, 'transaction' ),
+				'public'      => true,
+				'label_count' => _n_noop( $status.'<span class="count">(%s)</span>', $status.' <span class="count">(%s)</span>')
+				));
+
+		register_taxonomy(
+			'products',
+			array( 'product' ),
+			array(
+				'public' => true,
+				'labels' => array( 'name' => 'Tags', 'singular_name' => 'Tag' )
+			)
+		);
+		add_action('manage_posts_custom_column', array($this,'manage_posts_custom_column'),10,2);		
+	}
+	
+	function on_init_admin(){
 		if(function_exists('is_multisite') && is_multisite())
 			add_action('wpmu_delete_user',array($this, 'remove_plugin_access'));
 		else
@@ -89,54 +170,128 @@ class CrushedDirectory extends WpApplicationBase{
 		add_action('edit_button_form',array($this,'paypal_edit'));
 		add_filter('get_button_from_post',array($this,'paypal_pre_add'),10,1);
 		add_filter('pre_save_button',array($this,'paypal_pre_add'),10,1);
-		add_action('new-plugin-form',array($this,'group_access_restrictions'));
-		add_action('edit-plugin-form',array($this,'edit_group_access_restrictions'));
-		add_action('edit-plugin-form',array($this,'edit_plugin_form_files'));
-		add_action('update_plugin_meta',array($this,'update_plugin_meta'));
-		add_action('update_plugin_meta',array($this,'update_plugin_files_meta'),1);
-		$supports = array( 'excerpts', 'custom-fields' );
-		$args = array (
-		    'label' => __('Plugin'),
-		    '_show' => true,
-		    '_edit_link' => 'post.php?post=%d',
-		    'capability_type' => 'post',
-		    'hierarchical' => false,
-			'publicly_queryable'=>false,
-			'exclude_from_search' => true,
-		'internal' => true,
-		'supports'=>$supports
-		);
-		register_post_type( 'plugin' , $args );
-		$args = array (
-		    'label' => __('MailMessage'),
-		    '_show' => true,
-		    '_edit_link' => 'post.php?post=%d',
-		    'capability_type' => 'post',
-		    'hierarchical' => false,
-			'publicly_queryable'=>false,
-			'exclude_from_search' => true,
-		'internal' => true,
-		'supports'=>$supports
-		);
-		register_post_type( 'mailmessage' , $args );
+		add_action( "admin_print_scripts", array(&$this,'on_admin_print_scripts' ));
+		add_action( "admin_print_styles", array(&$this,'on_admin_print_styles' ));		
+		add_action('save_post', array($this,'save_file_meta'));
+		add_action('save_post', array($this,'save_event_meta'));
+		add_action('save_post', array($this,'save_group_access'));
+		add_filter('cd_events',array($this,'add_events'));
+		add_filter('manage_transaction_posts_columns',array($this,'edit_transaction_columns'));
+		add_filter('post_row_actions',array($this,'transaction_row_actions'),10,2);
+		add_filter('the_excerpt',array($this,'transaction_excerpt'),10,1);
+	}
+	function edit_transaction_columns($columns){
+		return array('cb'=>'','title'=>'Item','status'=>'Status','transaction_id'=>'Transaction Id','author'=>'Customer','payment_date'=>'Date');
+	}
+	function transaction_excerpt($the_excerpt){
+		global $post;
+		if($post->post_type!='transaction')
+			return $the_excerpt;
+		$data=unserialize($post->post_content);
+		$the_excerpt="<table>";
+		foreach($data as $key => $value)
+			$the_excerpt.="<tr><td>$key</td><td>$value</td></tr>";
+		$the_excerpt.="</table>";
+		return $the_excerpt;
+	}
+	function transaction_row_actions($actions,$post){
+		if(get_post_type($post)!='transaction')
+			return $actions;
+		unset($actions['edit']);
+		unset($actions['inline hide-if-no-js']);
+		$actions['view']='<a href="'.admin_url("post.php?post=$post_ID&action=edit")."\">View</a>";
+		return $actions;
+	}
+	function manage_posts_custom_column($column_name, $post_ID){
+		global $post;
+		if($post->post_type!='transaction')
+			return;
+		switch($column_name){
+/*			case 'item':
+				echo '<a href="'.admin_url("post.php?post=$post_ID&action=edit")."\">$post->post_title</a>";
+				break;*/
+			case 'transaction_id':
+				echo $post->post_name;
+				break;
+			case 'status':
+				echo $post->post_status;
+				break;				
+			case 'payment_date':
+				echo $post->post_date;
+				break;								
+		}
+	}
+	function remove_submenu() {
+		global $submenu;
+	    $submenu['crusheddirectory'] += Array
+	        (5  => Array('Products','edit_posts','edit.php?post_type=product'),
+//	         10 => Array('Add New Product','edit_posts','post-new.php?post_type=product'),
+	         10 => Array('Tags','manage_categories','edit-tags.php?taxonomy=products&post_type=product'));
+	    $submenu['crusheddirectory'] += Array
+	        (20  => Array('Messages','edit_posts','edit.php?post_type=message'));
+//	         25 => Array(0=>'Add New Message',1=>'edit_posts',2=>'post-new.php?post_type=message'));
+	    $submenu['crusheddirectory'] += Array
+	        (30 => Array('Transactions','edit_posts','edit.php?post_type=transaction'));/**/
 	}
 	
+	function remove_menu() {
+		global $menu;
+		//remove post top level menu
+		foreach($menu as $key =>$menu_item )
+			if(in_array($menu_item[0],array('Transactions','Messages','Products')))
+				unset($menu[$key]);
+	}
+
+	
+	function setup_product_meta_boxes(){
+		add_meta_box('groupaccess_meta_box', 'Group access', array(&$this,'groupaccess_meta_box'), 'product', 'normal', 'high');
+		add_meta_box('file_meta_box', 'Filename', array(&$this,'file_meta_box'), 'product', 'normal', 'high');		
+	}
+	function setup_message_meta_boxes(){
+		add_meta_box('event_meta_box', 'Event', array(&$this,'event_meta_box'), 'message', 'normal', 'high');		
+	}
+	function add_events($events){
+		$events['new-user']=__('New User');
+		$events['receipt']=__('Visitor purchased an item');
+		$events['purchase-finished-completed']=__('Visitor purchase completed and on finished page');
+		$events['purchase-finished-pending']=__('Visitor purchase pending and on on finished page');
+		$events['purchase-cancelled']=__('Visitor abandon purchase');	
+		return $events;
+	}
+	function groupaccess_meta_box($product){
+		$this->edit_group_access_restrictions($product);
+	}
 	function instantiate(){
 		new CrushedDirectory();
 	}
-	
-	function update_plugin_meta($id){
+	function save_file_meta($product_id){
+		if(isset($_POST['filename']))
+			update_post_meta($product_id,'filename',$_POST['filename']);
+		if(isset($_POST['version']))
+			update_post_meta($product_id,'version',$_POST['version']);				
+	}
+	function save_event_meta($message_id){
+		if(isset($_POST['event']))
+			update_post_meta($message_id,'event',$_POST['event']);
+	}
+	function save_group_access($id){
 		$access_levels=$_POST['access_levels'];
 		if(sizeof($access_levels)>0)
-		update_post_meta($id,'group_access',$_POST['access_levels']);
+			update_post_meta($id,'group_access',$_POST['access_levels']);
 		else
-		update_post_meta($id,'group_access',0);
+			update_post_meta($id,'group_access',array());		
 	}
-
+	function on_admin_print_styles(){
+		if((isset($_GET['post_type']) && $_GET['post_type']=='transaction') || get_post_type()=='transaction'){?>
+			<style>
+			#side-info-column,a.add-new-h2{display:none}
+			</style>
+		<?php 
+		}
+	}
 	function on_admin_print_scripts(){
-		if(isset($_GET['action']) && ($_GET['action']=='createnew' || $_GET['action']=='edit')){?>
-<script type="text/javascript">
-			
+		if(get_post_type()=='product'){?>
+			<script type="text/javascript">			
 			function add_access_level(){
 				group_id=jQuery("#group_access").val();
 				group_name=jQuery('#group_access :selected').text();
@@ -156,21 +311,64 @@ class CrushedDirectory extends WpApplicationBase{
 				jQuery("#"+id).remove();
 			}
 			</script>
-		<?php 	}
+		<?php 	
+		}
 	}
 	
 	function edit_group_access_restrictions($plugin){
-		$group_access=get_post_meta($plugin->ID,'group_access');
-		$group_access=$group_access[0];
+		if(!class_exists('Groups'))
+			return;
+		$group_access=get_post_meta($plugin->ID,'group_access',true);
 		$this->group_access_restrictions($group_access);
 	}
-	
+	function file_meta_box($product){
+		$filename=get_post_meta($product->ID,'filename',true);
+		$version=get_post_meta($product->ID,'version',true);
+	?>
+<div>
+<table style="width:600px">
+<tr>
+	<td><label>Filename:</label></td>
+	<td colspan="4">
+	<input id="filename" name="filename" value="<?php echo $filename?>"/>
+	</td>
+</tr>
+<tr>
+	<td><label>Version:</label></td>
+	<td colspan="4">
+	<input id="version" name="version" value="<?php echo $version?>"/>
+	</td>
+</tr>
+</table>
+</div>		
+<?php 
+	}
+	function event_meta_box($message){
+		$event=get_post_meta($message->ID,'event',true);
+		$events=apply_filters('cd_events',array());
+	?>
+<div>
+<table style="width:600px">
+<tr>
+	<td><label>Event:</label></td>
+	<td colspan="4">
+	<?php echo $event ?>
+	<?php HtmlHelper::selectSimple('event',$events,$event)?>
+	</td>
+</tr>
+</table>
+</div>		
+<?php 
+	}			
+		
 	function group_access_restrictions($group_access=false){
 		$groups=Groups::get_groups();
 		?>
+<div>
+<table style="width:600px">
 <tr>
-	<th style="width: 100px"><label>Access levels:</label></th>
-	<td>
+	<td><label>Access levels:</label></td>
+	<td colspan="4">
 	<ul id="access_levels">
 	<?php if($group_access):?>
 	<?php foreach($group_access as $group_id => $extra):?>
@@ -188,72 +386,126 @@ class CrushedDirectory extends WpApplicationBase{
 	</td>
 </tr>
 <tr>
-	<td colspan="2"><label
+	<td><label
 		style="width: 50px; display: block; float: left; font-weight: bold;">Group:</label>
+		</td>
+	<td>
 	<select id="group_access" name="group_access"
 		style="float: left; margin-right: 20px">
 		<?php foreach($groups as $group => $extra):?>
 		<option value="<?php echo esc_attr($group)?>"><?php echo esc_html(trim($extra['name']))?></option>
 		<?php endforeach;?>
-	</select> <label
-		style="width: 130px; display: block; float: left; font-weight: bold;">Number
-	of sites:</label> <input id="group_register_sites" value="" type="text"
-		size="5" style="width: 30px" /> (*=unlimited) <input type="button"
+	</select> 
+	</td>
+	<td>
+	<label style="width: 130px; display: block; float: left; font-weight: bold;">Number
+	of sites:</label> 
+	</td>
+	<td>
+	<input id="group_register_sites" value="" type="text"
+		size="5" style="width: 30px" /> (*=unlimited)
+	</td><td> <input type="button"
 		name="add_access" class="button-secondary"
 		value="<?php _e('Add access', 'crusheddirectory') ?>"
 		onclick="add_access_level()" /></td>
 </tr>
+</table>
+</div>
 		<?php
 	}
-	
+	function user_has_abandon_purchase($item_name){
+		$message=array_pop(ResponseMails::get_mails_for_event('purchase-cancelled'));
+		return nl2br(str_replace('{item}',$item_name,$message->post_content));
+	}	
+	function user_has_purchased($item_name){
+		$message=array_pop(ResponseMails::get_mails_for_event('purchase-finished-'.strtolower($_REQUEST['payment_status'])));
+		$trans=unserialize(Transactions::get($_REQUEST['txn_id'])->post_content);
+		$userdata=get_transient('new-user-'.$_REQUEST['txn_id']);
+		if($userdata)
+			$data=array('{txn_id}'=>$_REQUEST['txn_id'], '{username}'=>$userdata['user_login'],'{password}'=>$userdata['user_pass']);
+		$data['{item}']=$item_name;
+		$text=$message->post_content;
+		foreach($data as $key => $value)
+			$text=str_replace($key,$value,$text);
+		return $text;
+	}
+	function paypal_log_transaction($txn,$post){
+		$encoded_id=$post['item_number'];
+		$button=PayPalButtons::get_encoded_button($encoded_id,false);		
+		$email=$post['payer_email'];
+		$user=get_user_by_email($email);
+		$user_id=0;
+		if($user)
+			$user_id=$user->ID;
+		
+		Transactions::save($user_id,$button->name,$post);
+	}
+	function paypal_payment_pending($txn,$post){	
+		$encoded_id=$post['item_number'];
+		$button=PayPalButtons::get_encoded_button($encoded_id,false);		
+		wp_mail('andreas@cyonitesystems.com', 
+					"PayPal Pending Payment Recieved ".urldecode($post['payer_email']),
+"Item: $button->name
+Name: ".$post['first_name'].$post['last_name']."
+Transaction".$post['txn_id']."
+Pending reason:".$post['pending_reason'],
+					'From: Art Of WP Shop <shop@artofwp.com>' . "\r\n\\");		
+	}
 	function paypal_payment_recieved($txn,$post){
 		global $membersext;
 		$encoded_id=$post['item_number'];
-		$button=PayPalButtons::get_encoded_button($encoded_id,false);
+		$button=PayPalButtons::get_encoded_button($encoded_id,false);		
+		if(paypal_debugging())
+		wp_mail('andreas@cyonitesystems.com',"CR PayPal Payment Recieved",
+					'TXN TYPE:'.$txn. "\n\nButton:".print_r($button,true)."\n\nPost:" . print_r($post,true),
+					'From: Andreas Nurbo <andreas@cyonitesystems.com>' . "\r\n\\");
 		if(!isset($button->plugin_access))
-		return;
-		$email=$post['payer_email'];
+			return;
+		wp_mail('andreas@cyonitesystems.com', 
+					"PayPal Payment Recieved ".urldecode($post['payer_email']),
+"Item: $button->name
+Name: ".$post['first_name'].$post['last_name']."
+Transaction".$post['txn_id'],'From: Art Of WP Shop <shop@artofwp.com>' . "\r\n\\");		
+		
+		$email=urldecode($post['payer_email']);
 		$user=get_user_by_email($email);
-		paypal_log_info('crushed-dir user:',"<pre>".print_r($user,true)."</pre>");
 		
 		$plugin_access=(array)get_usermeta($user->ID,'plugin_access');
 		if(array_search($button->plugin_access,$plugin_access)===false)
 			$plugin_access['key']=substr(hash('md5',$user->ID.time()),0,12);
-//			$plugin_access[$button->plugin_access]['key']=substr(hash('md5',$user->ID.time()),0,12);
 		$plugin_access[$button->plugin_access]['sites']=array();
 		ksort($plugin_access);
 		update_usermeta($user->ID,'plugin_access',$plugin_access);
 		if(!Plugins::has_access($button->plugin_access,$user->ID)){
 			Plugins::save_plugin_user($button->plugin_access,$user->ID);
 		}
-		
-		paypal_log_info('crushed-dir new user:',"<pre>".print_r($membersext->new_user,true)."</pre>");		
-		if($membersext->new_user){			
+		$plugin=Plugins::get_plugin($button->plugin_access);
+		Transactions::save($user->ID,$button->name,$post);
+		if($membersext->new_user){
 			$user->password=$membersext->new_user['user_pass'];
 			$userdata['username']=$user->user_login;
 			$userdata['password']=$user->password;
 			$userdata['first_name']=get_usermeta($user->ID,'first_name');
 			$userdata['last_name']=get_usermeta($user->ID,'last_name');
 			$userdata['email']=$email;
-			$userdata['product']=$plugin->post_title;
+			$userdata['item']=$plugin->post_title;
 			$userdata['to']=$email;
-			$reciept['transaction']=$post['txn_id'];
-			$reciept['first_name']=$userdata['first_name'];
-			$reciept['last_name']=$userdata['last_name'];
-			$reciept['email']=$post['payer_email'];
-			$reciept['to']=$email;
-			$reciept['item']=$plugin->post_title;
-			$reciept['cost']=$post['mc_gross'];
-			$reciept['date']=$post['payment_date'];
 			ResponseMails::send_mails($userdata,'new-user');
-			//			ResponseMails::send_mails($reciept,'reciept');
 		}
-		//		$sent=ResponseMails::send_first_plugin_bought($user->ID,$plugin,$access);
+		$receipt['transaction']=$post['txn_id'];
+		$receipt['first_name']=get_usermeta($user->ID,'first_name');
+		$receipt['last_name']=get_usermeta($user->ID,'last_name');
+		$receipt['email']=$post['payer_email'];
+		$receipt['to']=$email;
+		$receipt['item']=$plugin->post_title;
+		$receipt['cost']=$post['mc_gross'];
+		$receipt['date']=$post['payment_date'];
+		ResponseMails::send_mails($receipt,'receipt');
 	}
 
 	function paypal_pre_add($button){
 		if($_POST['plugin_access']!='0')
-		$button['plugin_access']=$_POST['plugin_access'];
+			$button['plugin_access']=$_POST['plugin_access'];
 		return $button;
 	}
 	
@@ -262,7 +514,7 @@ class CrushedDirectory extends WpApplicationBase{
 	}
 	
 	function paypal($plugin_name){
-		$plugins=query_posts('post_type=plugin');
+		$plugins=query_posts('post_type=product');
 		?>
 <tr>
 	<th><label>Plugin access</label></th>
@@ -298,52 +550,38 @@ class CrushedDirectory extends WpApplicationBase{
 				update_option($fileslug,array('name'=>$filename,'version'=>$version,'url'=>$fileurl,'groups'=>$access_levels));
 			}
 		}
-		function edit_plugin_form_files($plugin){
-			$file=(object)array_pop(get_post_meta($plugin->ID,'file'));
-			?>
-<tr>
-	<th><label for="plugin-filename"><strong><?php _e('Plugin Filename:', 'crusheddirectory'); ?></strong></label>
-	</th>
-	<td><?php _e('A label for the plugin file.', 'crusheddirectory'); ?> <br />
-	<input id="plugin-filename" name="plugin-filename"
-		value="<?php esc_attr_e($file->name);?>" type="text" size="30"
-		class="regular-text" /></td>
-</tr>
-<tr>
-	<th><label for="plugin-version"><strong><?php _e('Plugin Version:', 'crusheddirectory'); ?></strong></label>
-	</th>
-	<td><?php _e('File version number.', 'crusheddirectory'); ?> <br />
-	<input id="plugin-version" name="plugin-version"
-		value="<?php esc_attr_e($file->version);?>" type="text" size="30"
-		class="regular-text" /></td>
-</tr>
-<tr>
-	<th><label for="plugin-fileurl"><strong><?php _e('Link to the file:', 'crusheddirectory'); ?></strong></label>
-	</th>
-	<td><?php _e('The url to the zip that contains this plugin.', 'crusheddirectory'); ?>
-	<br />
-	<input id="plugin-fileurl" name="plugin-fileurl"
-		value="<?php esc_attr_e($file->url);?>" type="text" size="30"
-		class="regular-text" /></td>
-</tr>
-			<?php
+		
+		function licensetext(){
+			if(isset($_GET['licensetext']) && $_GET['licensetext']=='plugin'){
+				$filename='plugins.html';//.$fileOptions['version'];
+				$filepath=WP_CONTENT_DIR."/uploads/licenses/$filename";				
+				header('HTTP/1.1 200 OK');
+				header('Content-Type: text/html');
+				header('Content-Length:'. filesize($filepath));
+				ob_clean();
+				flush();
+				readfile($filepath);
+				exit;
+			}
 		}
+		
 		function downloadfiles(){
 			if(isset($_GET['downloadfile'])){
-				$file=$_GET['downloadfile'];
-				switch_to_blog(1);
-				$fileOptions=get_option($file);
-				if(!$fileOptions)
+				$id=$_GET['downloadfile'];
+				global $wpdb;
+				$product_ID=$wpdb->get_var($wpdb->prepare("SELECT `ID` FROM $wpdb->posts  WHERE `post_type`='product' AND `post_name`=%s",$id));
+				if(!$product_ID)
 					wp_die('The requested file does not exist');
+
+				$groups=get_post_meta($product_ID,'group_access',true);
 				global $current_user;
-				$groups=$fileOptions['groups'];
 				$canAccess=false;
 				
-				foreach($groups as $group_id)
+				foreach($groups as $group_id => $group_data)
 					if(Memberships::is_member_of_group($current_user->ID,$group_id))
 						$canAccess=true;
 				if($canAccess){
-					$filename=basename($fileOptions['url']);
+					$filename=get_post_meta($product_ID,'filename',true);
 					$filepath=WP_CONTENT_DIR."/uploads/plugins/$filename";				
 					header('HTTP/1.1 200 OK');
 					header("Content-disposition: attachment; filename=$filename");
@@ -363,10 +601,11 @@ class CrushedDirectory extends WpApplicationBase{
 		function update_file(){
 			if(isset($_GET['update_file'])){
 				$id=$_GET['update_file'];
-	
-				$fileOptions=get_option($id);
-				if(!$fileOptions)
+				global $wpdb;
+				$product_ID=$wpdb->get_var($wpdb->prepare("SELECT `ID` FROM $wpdb->posts  WHERE `post_type`='product' AND `post_name`=%s",$id));
+				if(!$product_ID)
 					wp_die('The requested file does not exist');
+				$groups=get_post_meta($product_ID,'group_access',true);
 				$user=get_user_by_email($_GET['email']);
 				if(!isset($user) || empty($user)){
 					header('HTTP/1.1 403 Forbidden');
@@ -397,13 +636,12 @@ class CrushedDirectory extends WpApplicationBase{
 					die('The site are not allowed to download this file. From '.$ip.' and '.$domain);//.' extra '.$extra.' \n\r extra2 '.$extra2);
 				}
 				$canAccess=false;
-				$groups=$fileOptions['groups'];
 				foreach($groups as $group_id)
 					if(Memberships::is_member_of_group($user->ID,$group_id))
 						$canAccess=true;
 				
 				if($canAccess){
-					$filename=basename($fileOptions['url']);
+					$filename=get_post_meta($product_ID,'filename',true);
 					$filepath=WP_CONTENT_DIR."/uploads/plugins/$filename";				
 					header('HTTP/1.1 200 OK');
 					header("Content-disposition: attachment; filename=$filename");
@@ -422,12 +660,11 @@ class CrushedDirectory extends WpApplicationBase{
 		function free_update_file(){
 			if(isset($_GET['free_update_file'])){
 				$id=$_GET['free_update_file'];
-	
-				$fileOptions=get_option($id);
-				if(!$fileOptions)
+				global $wpdb;
+				$product_ID=$wpdb->get_var($wpdb->prepare("SELECT `ID` FROM $wpdb->posts  WHERE `post_type`='product' AND `post_name`=%s",$id));
+				if(!$product_ID)
 					wp_die('The requested file does not exist');
-			
-				$filename=basename($fileOptions['url']);
+				$filename=get_post_meta($product_ID,'filename',true);
 				$filepath=WP_CONTENT_DIR."/uploads/free/$filename";				
 				header('HTTP/1.1 200 OK');
 				header("Content-disposition: attachment; filename=$filename");
@@ -437,7 +674,7 @@ class CrushedDirectory extends WpApplicationBase{
 				flush();
 				readfile($filepath);
 				exit;
-			}			
+			}
 		}
 		function free_update(){
 			if(isset($_GET['free_update']) && $_GET['free_update']=='plugin'){			
@@ -445,72 +682,68 @@ class CrushedDirectory extends WpApplicationBase{
 				if (!isset($_REQUEST['id']) || $disable_update)
 					return;				
 				$id=$_REQUEST['id'];
-				$fileOptions=get_option($id);
-				$filename=basename($fileOptions['url']);
-
+				global $wpdb;
+				$product_ID=$wpdb->get_var($wpdb->prepare("SELECT `ID` FROM $wpdb->posts  WHERE `post_type`='product' AND `post_name`=%s",$id));
+				if(!$product_ID)
+					wp_die('The requested file does not exist');
 				$version = array(
 						'has_access' => true,
-						'version' => $fileOptions['version'],
-						'url' => "http://artofwp.com?free_update_file=$id",
+						'version' => get_post_meta($product_ID,'version',true),
+						'url' => "http://api.artofwp.com?free_update_file=$id",
 						'site' =>'http://artofwp.com'
 				);
-				die(serialize($version));							
+				die(serialize($version));				
 			}
 		}
 		function update(){
 			if(isset($_GET['update']) && $_GET['update']=='plugin_information'){
 				if (!isset($_REQUEST['id']) || $disable_update)
-					return;				
+					return;
 				$id=$_REQUEST['id'];
-				$fileOptions=get_option($id);
-				$filename=$id.'.txt';//.$fileOptions['version'];
+				$filename=$id.'.txt';
 				$filepath=WP_CONTENT_DIR."/uploads/versions/$filename";				
 				header('HTTP/1.1 200 OK');
-				header('Content-Type: text/html');
+				header('Content-Type: text/plain');
 				header('Content-Length:'. filesize($filepath));
 				ob_clean();
 				flush();
 				readfile($filepath);
 				exit;
 			}else if(isset($_GET['update']) && $_GET['update']=='plugin'){
-				// Set this to TRUE while editing and testing this file
-				$disable_update = false;
-								
-				if (!isset($_REQUEST['id']) || $disable_update)
+				if (!isset($_REQUEST['id']))
 					return;
 
 				$id=$_REQUEST['id'];
-				$fileOptions=get_option($id);
+				global $wpdb;
+				$product_ID=$wpdb->get_var($wpdb->prepare("SELECT `ID` FROM $wpdb->posts  WHERE `post_type`='product' AND `post_name`=%s",$id));
+				if(!$product_ID)
+					wp_die('The requested file does not exist');
+
 				$siteid=$this->get_siteid();
+				if(!$siteid)
+					wp_die('The request is missing registration key and/or email.');
+				
 				$user=get_user_by_email($_REQUEST['email']);
 				$plugin_access=get_usermeta($user->ID,'plugin_access');	
 				$user_sites=$plugin_access[$id]['sites'];
-//				$has_access=true;
-//				if(!Plugins::has_access($id,$user->ID) && !array_key_exists($siteid,$user_sites))
-//					$has_access=false;
+				$user_sites=is_array($user_sites)?$user_sites:array();
 				$has_access=false;
-				$groups=$fileOptions['groups'];
+				$groups=get_post_meta($product_ID,'group_access',true);
 				foreach($groups as $group_id)
 					if(Memberships::is_member_of_group($user->ID,$group_id))
 						$has_access=true;
-				/*if(isset($user_sites['0e84e3332f31f2154ca869ab31bd85f0'])){
-					unset($user_sites['0e84e3332f31f2154ca869ab31bd85f0']);
-					$user_sites['f14ad812338a81821b48d674c5815e10']='testing.dd';
-					$plugin_access[$id]['sites']=$user_sites;					
-					update_usermeta($user->ID,'plugin_access',$plugin_access);					
-				}*/
 						
 				if(!array_key_exists($siteid,$user_sites)){
 					$has_access=false;
 				}
-				$filename=basename($fileOptions['url']);
+				$filename=get_post_meta($product_ID,'filename',true);
 
 				$version = array(
 						'has_access' => $has_access,
-						'version' => $fileOptions['version'],
-						'url' => "http://artofwp.com?update_file=$id&email={email}&key={key}",
-						'site' =>'http://artofwp.com',
-						'sites' => print_r($plugin_access,true).' no site: '.$nosite
+						'version' => get_post_meta($product_ID,'version',true),
+						'url' => "http://api.artofwp.com?update_file=$id&email={email}&key={key}",
+						'site' =>'http://artofwp.com'/*,
+						'sites' => print_r($plugin_access,true)*/
 						);
 				die(serialize($version));
 			}
@@ -524,11 +757,17 @@ class CrushedDirectory extends WpApplicationBase{
 			$siteid=$this->get_siteid();
 			if(!$siteid)
 				die($_GET['callback'].'('.json_encode(array('status'=>'error','message'=>'You have to supply your email and registration key.')).')');
-							
 			if(!$user)
 				die($_GET['callback'].'('.json_encode(array('status'=>'error','message'=>'No user with this email '.$user_email)).')');
-
-			$group_access=Plugins::get_group_access($id);
+			global $wpdb;
+			$product_ID=$wpdb->get_var($wpdb->prepare("SELECT `ID` FROM $wpdb->posts  WHERE `post_type`='product' AND `post_name`=%s",$id));
+			if(!$product_ID)
+				die($_GET['callback'].'('.json_encode(array('status'=>'error','message'=>'No plugin or theme with this Id:'.$id)).')');			
+			$group_access=get_post_meta($product_ID,'group_access',true);
+			if(!class_exists('Groups'))
+				include(plugin_dir_path(__FILE__).'../MembersExtended/components/groups/models/groups.php');			
+			if(!class_exists('Memberships'))
+				include(plugin_dir_path(__FILE__).'../MembersExtended/components/groups/models/memberships.php');
 			$memberships=Memberships::get_memberships_for_user($user->ID);
 			$canHaveXNbrOfSites=false;
 			foreach($group_access as $group_id => $extra)
@@ -538,7 +777,7 @@ class CrushedDirectory extends WpApplicationBase{
 				die($_GET['callback'].'('.json_encode(array('status'=>'error','message'=>'You don\'t have the right to register this plugin with this site.')).')');
 				
 			$plugin_access=get_usermeta($user->ID,'plugin_access');
-			var_dump($plugin_access);
+
 /*			if(!array_key_exists($id,$plugin_access))
 				die($_GET['callback'].'('.json_encode(array('status'=>'error','message'=>'This user account don\'t have access.')).')');
 */
@@ -550,15 +789,18 @@ class CrushedDirectory extends WpApplicationBase{
 			$user_sites=$plugin_access[$id]['sites'];
 			if(!is_array($user_sites) && empty($user_sites))
 				$user_sites=array();
-			if(sizeof($user_sites)>=$canHaveXNbrOfSites)
-				die($_GET['callback'].'('.json_encode(array('status'=>'error','message'=>'You cannot register more sites.')).')');
+			if(sizeof($user_sites)>=$canHaveXNbrOfSites && $canHaveXNbrOfSites!=='*')
+				die($_GET['callback'].'('.json_encode(array('status'=>'error','message'=>'You cannot register more sites.','sites'=>$canHaveXNbrOfSites,'left'=>$canHaveXNbrOfSites-sizeof($user_sites))).')');
 			if(array_key_exists($siteid,$user_sites))
-				die($_GET['callback'].'('.json_encode(array('status'=>'error','type'=>1,'message'=>'This site is already registered. If your uninstallation has failed login to your account at artofwp.com and unregister this site.')).')');
+				die($_GET['callback'].'('.json_encode(array('status'=>'error','type'=>1,'message'=>'This site is already registered. If your uninstallation has failed login to your account at artofwp.com and unregister this site.','sites'=>$canHaveXNbrOfSites,'left'=>$canHaveXNbrOfSites-sizeof($user_sites))).')');
 
 			$user_sites[$siteid]=$domain;
 			$plugin_access[$id]['sites']=$user_sites;
 			update_usermeta($user->ID,'plugin_access',$plugin_access);
-			die($_GET['callback'].'('.json_encode(array('status'=>'ok','sites'=>$canHaveXNbrOfSites,'left'=>$canHaveXNbrOfSites-sizeof($user_sites))).')');
+			if($canHaveXNbrOfSites!=='*')
+				die($_GET['callback'].'('.json_encode(array('status'=>'ok','sites'=>$canHaveXNbrOfSites,'left'=>$canHaveXNbrOfSites-sizeof($user_sites))).')');
+			else
+				die($_GET['callback'].'('.json_encode(array('status'=>'ok','sites'=>$canHaveXNbrOfSites,'left'=>$canHaveXNbrOfSites)).')');				
 		}
 		private function get_siteid(){
 			$regkey=trim($_REQUEST['key']);
@@ -571,9 +813,9 @@ class CrushedDirectory extends WpApplicationBase{
 			return $siteid;
 		}
 		function unregister(){
-			$id=trim($_GET['id']);
-			$regkey=trim($_GET['key']);
-			$user_email=trim($_GET['email']);
+			$id=trim($_REQUEST['id']);
+			$regkey=trim($_REQUEST['key']);
+			$user_email=trim($_REQUEST['email']);
 			$user=get_user_by_email($user_email);
 			$siteid=$this->get_siteid();
 			$plugin_access=get_usermeta($user->ID,'plugin_access');			
@@ -588,10 +830,6 @@ class CrushedDirectory extends WpApplicationBase{
 		}
 		function your_plugins_shortcode( $attr ) {
 			global $current_user;
-			/* Set up our default attributes. */
-			//$defaults = array('id' => '');
-			/* Merge the input attributes and the defaults. */
-			//extract( shortcode_atts( $defaults, $attr ) );
 			$plugin_access=get_usermeta($current_user->ID,'plugin_access');			
 			$key=$plugin_access['key'];
 			$plugins=Plugins::plugins_for_current_user();

@@ -15,7 +15,8 @@ class ResponseMails{
 		return $result;
 	}
 	static function send_mail($from,$to,$subject,$message){
-		$headers = array("From: $from->name <$from->email>");
+		$headers = array("From: $from->name <$from->email>","Content-Type: text/html"
+		);
 		$sent=wp_mail($to, $subject, $message, $headers);
 		return $sent;
 	}
@@ -24,17 +25,29 @@ class ResponseMails{
 		paypal_log_info('mails',print_r($mails,true));
 		$from=(object)array('name'=>'Shop Art Of WordPress', 'email'=>'support@artofwp.com');
 		foreach($mails as $mail){
-			$subject=$mail->post_title;
-			paypal_log_info('mailsubject',$subject);			
-			$message_plain=$mail->post_content_filtered;
+			$subject=$mail->post_title;			
+			$message_plain=$mail->post_content;
 			foreach($data as $key=>$value){
 				$key='{'.$key.'}';
 				$subject=str_replace($key,$value,$subject);
 				$message_plain=str_replace($key,$value,$message_plain);				
 			}
+			paypal_log_info('mailsubject',$subject);
+			paypal_log_info('mailmessage',$message_plain);						
 			$result=self::send_mail($from,$data['to'],$subject,$message_plain);
 			paypal_log_info('aftersend_mail',$result);
 		}
+	}
+	static function merge_mail($data,$event){
+		$mails=self::get_mails_for_event($event);		
+		foreach($mails as $mail){
+			foreach($data as $key=>$value){
+				$key='{'.$key.'}';
+				$mail->post_title=str_replace($key,$value,$mail->post_title);
+				$mail->post_content=str_replace($key,$value,$mail->post_content);				
+			}
+		}
+		return $mails;		
 	}
 	static function save_mail($mail){
 		$mail['post_type']='mailmessage';
@@ -48,13 +61,14 @@ class ResponseMails{
 		}
 	}
 	static function get_mails_for_event($event){
-		global $wpdb;
-		$results=$wpdb->get_results($wpdb->prepare("SELECT * FROM $wpdb->posts,$wpdb->postmeta WHERE post_id=ID AND meta_key='event' AND meta_value=%s AND post_type='mailmessage'",$event));
-		return $results;		
+		$mails=query_posts('post_type=message&meta_key=event&meta_value='.$event);
+		wp_reset_query();
+		return $mails;
 	}
 	static function get_mail($slug){
-		global $wpdb;
-		$mail=$wpdb->get_row($wpdb->prepare("SELECT * FROM $wpdb->posts WHERE `post_name`=%s",$slug));
+		$mails=query_posts('post_type=message&postname='.$slug);
+		wp_reset_query();
+		$mail=$mails[0];
 		$temp->ID=$mail->ID;
 		$temp->slug=$mail->post_name;
 		$temp->message_plain=$mail->post_content_filtered;
@@ -65,8 +79,8 @@ class ResponseMails{
 		return $temp;
 	}
 	static function get_mails(){
-		global $wpdb;
-		$results=$wpdb->get_results("SELECT * FROM $wpdb->posts WHERE `post_type`='mailmessage'");		
-		return $results;
+		$mails=query_posts('post_type=message');
+		wp_reset_query();
+		return $mails;
 	}
 }
