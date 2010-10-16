@@ -28,9 +28,6 @@ class CrushedDirectory extends WpApplicationBase{
 		wp_register_style('crushed-directory',plugins_url('crushed-directory/css/style.css'));
 		wp_enqueue_style('crushed-directory');
 		add_action('init',array(&$this,'on_init'));
-		add_action('admin_head', array(&$this,'remove_menu'),20000000000);		
-		add_action('admin_head', array(&$this,'remove_submenu'),10000000000);
-
 	}
 	
 	function on_admin_menu(){
@@ -41,6 +38,10 @@ class CrushedDirectory extends WpApplicationBase{
 		include('app/views/CDirectoryAdmin/overview.php');
 	}
 	function on_init(){
+		if(current_user_can('activate_plugins')){
+			add_action('admin_head', array(&$this,'remove_menu'),20000000000);		
+			add_action('admin_head', array(&$this,'remove_submenu'),10000000000);
+		}		
 //		if(is_user_logged_in())
 		if(defined('DOING_AJAX') && DOING_AJAX){
 			add_action('wp_ajax_nopriv_awpregister',array(&$this,'register'));
@@ -275,11 +276,13 @@ class CrushedDirectory extends WpApplicationBase{
 			update_post_meta($message_id,'event',$_POST['event']);
 	}
 	function save_group_access($id){
+		if(!isset($_POST['access_levels']))
+			return;
 		$access_levels=$_POST['access_levels'];
 		if(sizeof($access_levels)>0)
 			update_post_meta($id,'group_access',$_POST['access_levels']);
 		else
-			update_post_meta($id,'group_access',array());		
+			update_post_meta($id,'group_access',array());
 	}
 	function on_admin_print_styles(){
 		if((isset($_GET['post_type']) && $_GET['post_type']=='transaction') || get_post_type()=='transaction'){?>
@@ -573,13 +576,15 @@ Transaction".$post['txn_id'],'From: Art Of WP Shop <shop@artofwp.com>' . "\r\n\\
 				if(!$product_ID)
 					wp_die('The requested file does not exist');
 
-				$groups=get_post_meta($product_ID,'group_access',true);
 				global $current_user;
 				$canAccess=false;
 				
-				foreach($groups as $group_id => $group_data)
-					if(Memberships::is_member_of_group($current_user->ID,$group_id))
+				$memberships=Memberships::get_memberships_for_user($current_user->ID);
+				$group_access=get_post_meta($product_ID,'group_access',true);
+				foreach($group_access as $group_id => $extra)
+					if(array_key_exists($group_id,$memberships))
 						$canAccess=true;
+						
 				if($canAccess){
 					$filename=get_post_meta($product_ID,'filename',true);
 					$filepath=WP_CONTENT_DIR."/uploads/plugins/$filename";				
@@ -595,7 +600,6 @@ Transaction".$post['txn_id'],'From: Art Of WP Shop <shop@artofwp.com>' . "\r\n\\
 					header('HTTP/1.1 403 Forbidden');
 					wp_die('You are not allowed to download this file.');
 				}
-				restore_current_blog();
 			}
 		}
 		function update_file(){
@@ -606,7 +610,7 @@ Transaction".$post['txn_id'],'From: Art Of WP Shop <shop@artofwp.com>' . "\r\n\\
 				if(!$product_ID)
 					wp_die('The requested file does not exist');
 				$groups=get_post_meta($product_ID,'group_access',true);
-				$user=get_user_by_email($_GET['email']);
+				$user=get_user_by_email(urldecode($_REQUEST['email']));
 				if(!isset($user) || empty($user)){
 					header('HTTP/1.1 403 Forbidden');
 					die('You are not allowed to download this file. User does not have access '.$_GET['email']);
@@ -622,27 +626,26 @@ Transaction".$post['txn_id'],'From: Art Of WP Shop <shop@artofwp.com>' . "\r\n\\
 				$plugin_access=get_usermeta($user->ID,'plugin_access');
 				$user_sites=$plugin_access[$id]['sites'];
 				
-				/*
-				if(!Plugins::has_access($id,$user->ID)){
-					header('HTTP/1.1 403 Forbidden');
-					die('You do not have access to this file.');
-				}*/
 				if(!array_key_exists($siteid,$user_sites)){
 					header('HTTP/1.1 403 Forbidden');
 					$domain=Http::get_request_domain();
 					$ip=Http::get_IP();
-//					$extra = print_r($_SERVER,true);
-//					$extra2=print_r($_REQUEST,true);
-					die('The site are not allowed to download this file. From '.$ip.' and '.$domain);//.' extra '.$extra.' \n\r extra2 '.$extra2);
+					die('The site is not allowed to download this file. From '.$ip.' and '.$domain);
 				}
+							if(!class_exists('Groups'))
+				include(plugin_dir_path(__FILE__).'../MembersExtended/components/groups/models/groups.php');			
+			if(!class_exists('Memberships'))
+				include(plugin_dir_path(__FILE__).'../MembersExtended/components/groups/models/memberships.php');
 				$canAccess=false;
-				foreach($groups as $group_id)
-					if(Memberships::is_member_of_group($user->ID,$group_id))
+				$memberships=Memberships::get_memberships_for_user($user->ID);
+				$group_access=get_post_meta($product_ID,'group_access',true);				
+				foreach($group_access as $group_id => $extra)
+					if(array_key_exists($group_id,$memberships))
 						$canAccess=true;
 				
 				if($canAccess){
 					$filename=get_post_meta($product_ID,'filename',true);
-					$filepath=WP_CONTENT_DIR."/uploads/plugins/$filename";				
+					$filepath=WP_CONTENT_DIR."/uploads/plugins/$filename";
 					header('HTTP/1.1 200 OK');
 					header("Content-disposition: attachment; filename=$filename");
 					header('Content-Type: application/zip');
@@ -712,7 +715,11 @@ Transaction".$post['txn_id'],'From: Art Of WP Shop <shop@artofwp.com>' . "\r\n\\
 			}else if(isset($_GET['update']) && $_GET['update']=='plugin'){
 				if (!isset($_REQUEST['id']))
 					return;
-
+			if(!class_exists('Groups'))
+				include(plugin_dir_path(__FILE__).'../MembersExtended/components/groups/models/groups.php');			
+			if(!class_exists('Memberships'))
+				include(plugin_dir_path(__FILE__).'../MembersExtended/components/groups/models/memberships.php');
+					
 				$id=$_REQUEST['id'];
 				global $wpdb;
 				$product_ID=$wpdb->get_var($wpdb->prepare("SELECT `ID` FROM $wpdb->posts  WHERE `post_type`='product' AND `post_name`=%s",$id));
@@ -728,10 +735,12 @@ Transaction".$post['txn_id'],'From: Art Of WP Shop <shop@artofwp.com>' . "\r\n\\
 				$user_sites=$plugin_access[$id]['sites'];
 				$user_sites=is_array($user_sites)?$user_sites:array();
 				$has_access=false;
-				$groups=get_post_meta($product_ID,'group_access',true);
-				foreach($groups as $group_id)
-					if(Memberships::is_member_of_group($user->ID,$group_id))
+				$memberships=Memberships::get_memberships_for_user($user->ID);
+				$group_access=get_post_meta($product_ID,'group_access',true);				
+				foreach($group_access as $group_id => $extra)
+					if(array_key_exists($group_id,$memberships))
 						$has_access=true;
+
 						
 				if(!array_key_exists($siteid,$user_sites)){
 					$has_access=false;
@@ -743,7 +752,10 @@ Transaction".$post['txn_id'],'From: Art Of WP Shop <shop@artofwp.com>' . "\r\n\\
 						'version' => get_post_meta($product_ID,'version',true),
 						'url' => "http://api.artofwp.com?update_file=$id&email={email}&key={key}",
 						'site' =>'http://artofwp.com'/*,
-						'sites' => print_r($plugin_access,true)*/
+						'sites' => $plugin_access,
+						'siteid'=>$siteid,
+						'memberships'=> $memberships,
+						'groupaccess'=> $group_access*/
 						);
 				die(serialize($version));
 			}
@@ -818,7 +830,7 @@ Transaction".$post['txn_id'],'From: Art Of WP Shop <shop@artofwp.com>' . "\r\n\\
 			$user_email=trim($_REQUEST['email']);
 			$user=get_user_by_email($user_email);
 			$siteid=$this->get_siteid();
-			$plugin_access=get_usermeta($user->ID,'plugin_access');			
+			$plugin_access=get_usermeta($user->ID,'plugin_access');
 			$user_sites=$plugin_access[$id]['sites'];
 			unset($user_sites[$siteid]);
 			$plugin_access[$id]['sites']=$user_sites;
@@ -830,6 +842,21 @@ Transaction".$post['txn_id'],'From: Art Of WP Shop <shop@artofwp.com>' . "\r\n\\
 		}
 		function your_plugins_shortcode( $attr ) {
 			global $current_user;
+			if(isset($_POST['unregister'])){
+				$plugin_access=get_usermeta($current_user->ID,'plugin_access');
+				$id=$_POST['plugin'];
+				$user_sites=$plugin_access[$id]['sites'];
+				$sites=$_POST['site'];
+				foreach($sites as $site){
+					$key=array_search($site,$user_sites);
+					if($key)
+						unset($user_sites[$key]);
+				}
+				$plugin_access[$id]['sites']=$user_sites;
+				update_usermeta($current_user->ID,'plugin_access',$plugin_access);
+			}
+			
+			
 			$plugin_access=get_usermeta($current_user->ID,'plugin_access');			
 			$key=$plugin_access['key'];
 			$plugins=Plugins::plugins_for_current_user();
