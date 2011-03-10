@@ -59,9 +59,16 @@ class CrushedDirectory extends WpApplicationBase{
 		add_action( 'template_redirect', array(&$this,'downloadfiles'));
 		add_action('paypal',array($this,'paypal_log_transaction'),1,2);
 		add_action('paypal-completed',array(&$this,'paypal_payment_recieved'),1000,2);
+		add_action('wsopro',array($this,'wsopro_log_transaction'),1,2);
+		add_action('wsopro-completed',array(&$this,'wsopro_payment_recieved'),1000,2);
+		add_action('wsopro-pending',array(&$this,'wsopro_payment_pending'),10,2);
+		add_action('ejunkie',array($this,'ejunkie_log_transaction'),1,2);
+		add_action('ejunkie-completed',array(&$this,'ejunkie_payment_recieved'),1000,2);
 		add_action('paypal-pending',array(&$this,'paypal_payment_pending'),10,2);
 		add_filter('paypal_checkout',array(&$this,'user_has_purchased'));
 		add_filter('paypal_cancelled',array(&$this,'user_has_abandon_purchase'));
+		add_action('edit_user_profile',array(&$this,'view_sites'));
+		//add_action('show_user_profile',array(&$this,'view_sites'));		
 		$args = array (
 			'labels' => array(
 				'name' => __( 'Products' ),
@@ -167,10 +174,10 @@ class CrushedDirectory extends WpApplicationBase{
 			add_action('wpmu_delete_user',array($this, 'remove_plugin_access'));
 		else
 			add_action('delete_user',array($this, 'remove_plugin_access'));
-		add_action('new_button_form',array($this,'paypal'));
-		add_action('edit_button_form',array($this,'paypal_edit'));
-		add_filter('get_button_from_post',array($this,'paypal_pre_add'),10,1);
-		add_filter('pre_save_button',array($this,'paypal_pre_add'),10,1);
+		add_action('new_button_form',array($this,'button'));
+		add_action('edit_button_form',array($this,'button_edit'));
+		add_filter('get_button_from_post',array($this,'button_pre_add'),10,1);
+		add_filter('pre_save_button',array($this,'button_pre_add'),10,1);
 		add_action( "admin_print_scripts", array(&$this,'on_admin_print_scripts' ));
 		add_action( "admin_print_styles", array(&$this,'on_admin_print_styles' ));		
 		add_action('save_post', array($this,'save_file_meta'));
@@ -224,6 +231,7 @@ class CrushedDirectory extends WpApplicationBase{
 	}
 	function remove_submenu() {
 		global $submenu;
+		if(isset($submenu['crusheddirectory'])){
 	    $submenu['crusheddirectory'] += Array
 	        (5  => Array('Products','edit_posts','edit.php?post_type=product'),
 //	         10 => Array('Add New Product','edit_posts','post-new.php?post_type=product'),
@@ -233,6 +241,7 @@ class CrushedDirectory extends WpApplicationBase{
 //	         25 => Array(0=>'Add New Message',1=>'edit_posts',2=>'post-new.php?post_type=message'));
 	    $submenu['crusheddirectory'] += Array
 	        (30 => Array('Transactions','edit_posts','edit.php?post_type=transaction'));/**/
+		}
 	}
 	
 	function remove_menu() {
@@ -252,6 +261,7 @@ class CrushedDirectory extends WpApplicationBase{
 		add_meta_box('event_meta_box', 'Event', array(&$this,'event_meta_box'), 'message', 'normal', 'high');		
 	}
 	function add_events($events){
+		$events['0']=__('No event');		
 		$events['new-user']=__('New User');
 		$events['receipt']=__('Visitor purchased an item');
 		$events['purchase-finished-completed']=__('Visitor purchase completed and on finished page');
@@ -265,11 +275,28 @@ class CrushedDirectory extends WpApplicationBase{
 	function instantiate(){
 		new CrushedDirectory();
 	}
+	function view_sites($profileuser){		
+		$plugin_access=get_usermeta($profileuser->ID,'plugin_access');
+		echo "<pre>",print_r($plugin_access,true),"</pre>";
+		echo '<table class="widefat fixed" cellspacing="0">';
+		echo '<thead class="thead">';
+		echo '<tr><th>Plugin</th><th>Sites</th></tr>';
+		foreach($plugin_access as $id => $array){
+			if($id!='key' && is_string($id) && strlen($id)>5){
+				echo "<tr><td><strong>$id</strong></td><td>";
+				$sites=$array['sites'];
+				foreach($sites as $site)
+					echo $site," ";
+				echo "</td></tr>";
+			}
+		}
+		echo "</table>";
+	}
 	function save_file_meta($product_id){
 		if(isset($_POST['filename']))
 			update_post_meta($product_id,'filename',$_POST['filename']);
 		if(isset($_POST['version']))
-			update_post_meta($product_id,'version',$_POST['version']);				
+			update_post_meta($product_id,'version',$_POST['version']);
 	}
 	function save_event_meta($message_id){
 		if(isset($_POST['event']))
@@ -443,6 +470,28 @@ class CrushedDirectory extends WpApplicationBase{
 		
 		Transactions::save($user_id,$button->name,$post);
 	}
+	function ejunkie_log_transaction($txn,$post){
+		$encoded_id=$post['item_number'];
+		$button=EjunkieButtons::get_encoded_button($encoded_id,false);		
+		$email=$post['payer_email'];
+		$user=get_user_by_email($email);
+		$user_id=0;
+		if($user)
+			$user_id=$user->ID;
+		
+		Transactions::save($user_id,$button->name,$post);
+	}	
+	function ejunkie_payment_pending($txn,$post){	
+		$encoded_id=$post['item_number'];
+		$button=EjunkieButtons::get_encoded_button($encoded_id,false);		
+		wp_mail('andreas@cyonitesystems.com', 
+					"Ejunkie Pending Payment Recieved ".urldecode($post['payer_email']),
+"Item: $button->name
+Name: ".$post['first_name'].$post['last_name']."
+Transaction".$post['txn_id']."
+Pending reason:".$post['pending_reason'],
+					'From: Art Of WP Shop <shop@artofwp.com>' . "\r\n\\");		
+	}
 	function paypal_payment_pending($txn,$post){	
 		$encoded_id=$post['item_number'];
 		$button=PayPalButtons::get_encoded_button($encoded_id,false);		
@@ -453,7 +502,136 @@ Name: ".$post['first_name'].$post['last_name']."
 Transaction".$post['txn_id']."
 Pending reason:".$post['pending_reason'],
 					'From: Art Of WP Shop <shop@artofwp.com>' . "\r\n\\");		
-	}
+	}	
+	function wsopro_payment_pending($txn,$post){	
+		$itemnumber=$post['item_number'];
+		$itemnumber=explode('_',$itemnumber);
+		$button_id=$itemnumber[1];
+		$transaction_id=$itemnumber[2];
+		$button=PayPalButtons::get_button($button_id,false);		
+		wp_mail('andreas@cyonitesystems.com', 
+					"WSOPRO PayPal Pending Payment Recieved ".urldecode($post['payer_email']),
+"Item: $button->name
+Name: ".$post['first_name'].$post['last_name']."
+WSOPRO Transaction".$transaction_id."
+Transaction".$post['txn_id']."
+Pending reason:".$post['pending_reason'],
+					'From: Art Of WP Shop <shop@artofwp.com>' . "\r\n\\");
+	}	
+	function wsopro_payment_recieved($txn,$post){
+		global $membersext;
+		$itemnumber=$post['item_number'];
+		$itemnumber=explode('_',$itemnumber);
+		$button_id=$itemnumber[1];
+		$transaction_id=$itemnumber[2];
+		$button=PayPalButtons::get_button($button_id,false);		
+		if(wsopro_debugging())
+		wp_mail('andreas@cyonitesystems.com',"WSOPRO PayPal Payment Recieved",
+					'TXN TYPE:'.$txn. "\n\nButton:".print_r($button,true)."\n\nPost:" . print_r($post,true),
+					'From: Andreas Nurbo <andreas@cyonitesystems.com>' . "\r\n\\");
+		if(!isset($button->plugin_access))
+			return;
+		wp_mail('andreas@cyonitesystems.com', 
+					"WSOPRO PayPal Payment Recieved ".urldecode($post['payer_email']),
+"Item: $button->name
+Name: ".$post['first_name'].$post['last_name']."
+Transaction".$post['txn_id'],'From: Art Of WP Shop <shop@artofwp.com>' . "\r\n\\");		
+		
+		$email=urldecode($post['payer_email']);
+		$user=get_user_by_email($email);
+		
+		$plugin_access=(array)get_usermeta($user->ID,'plugin_access');
+		if(array_search($button->plugin_access,$plugin_access)===false)
+			$plugin_access['key']=substr(hash('md5',$user->ID.time()),0,12);
+		$plugin_access[$button->plugin_access]['sites']=array();
+		ksort($plugin_access);
+		update_usermeta($user->ID,'plugin_access',$plugin_access);
+		if(!Plugins::has_access($button->plugin_access,$user->ID)){
+			Plugins::save_plugin_user($button->plugin_access,$user->ID);
+		}
+		$plugin=Plugins::get_plugin($button->plugin_access);
+		Transactions::save($user->ID,$button->name,$post);
+		if($membersext->new_user){
+			$user->password=$membersext->new_user['user_pass'];
+			$userdata['username']=$user->user_login;
+			$userdata['password']=$user->password;
+			$userdata['first_name']=get_usermeta($user->ID,'first_name');
+			$userdata['last_name']=get_usermeta($user->ID,'last_name');
+			$userdata['email']=$email;
+			$userdata['item']=$plugin->post_title;
+			$userdata['to']=$email;
+			ResponseMails::send_mails($userdata,'new-user');
+		}
+		$receipt['transaction']=$post['txn_id'];
+		$receipt['first_name']=get_usermeta($user->ID,'first_name');
+		$receipt['last_name']=get_usermeta($user->ID,'last_name');
+		$receipt['email']=$post['payer_email'];
+		$receipt['to']=$email;
+		$receipt['item']=$plugin->post_title;
+		$receipt['cost']=$post['mc_gross'];
+		$receipt['date']=$post['payment_date'];
+		ResponseMails::send_mails($receipt,'receipt');
+		$this->subscribe_customer($receipt['first_name'],$receipt['last_name'],$email,$plugin->post_title);
+		
+	}	
+	
+	function ejunkie_payment_recieved($txn,$post){
+		global $membersext;
+		if(isset($post['item_cart_position']))
+			$encoded_id=$post['item_number'.$post['item_cart_position']];
+		else
+			$encoded_id=$post['item_number'];
+		$post['payment_status']='Completed';
+		$button=EjunkieButtons::get_encoded_button($encoded_id,false);		
+		if(ejunkie_debugging())
+		wp_mail('andreas@cyonitesystems.com',"CR E-Junkie Payment Recieved",
+					'TXN TYPE:'.$txn. "\n\nButton:".print_r($button,true)."\n\nPost:" . print_r($post,true),
+					'From: Andreas Nurbo <andreas@cyonitesystems.com>' . "\r\n\\");
+		if(!isset($button->plugin_access))
+			return;
+		wp_mail('andreas@cyonitesystems.com', 
+					"E-Junkie Payment Recieved ".urldecode($post['payer_email']),
+"Item: $button->name
+Name: ".$post['first_name'].$post['last_name']."
+Transaction".$post['txn_id'],'From: Art Of WP Shop <shop@artofwp.com>' . "\r\n\\");		
+		
+		$email=urldecode($post['payer_email']);
+		$user=get_user_by_email($email);
+		
+		$plugin_access=(array)get_usermeta($user->ID,'plugin_access');
+		if(array_search($button->plugin_access,$plugin_access)===false)
+			$plugin_access['key']=substr(hash('md5',$user->ID.time()),0,12);
+		$plugin_access[$button->plugin_access]['sites']=array();
+		ksort($plugin_access);
+		update_usermeta($user->ID,'plugin_access',$plugin_access);
+		if(!Plugins::has_access($button->plugin_access,$user->ID)){
+			Plugins::save_plugin_user($button->plugin_access,$user->ID);
+		}
+		$plugin=Plugins::get_plugin($button->plugin_access);
+		Transactions::save($user->ID,$button->name,$post);
+		if($membersext->new_user){
+			$user->password=$membersext->new_user['user_pass'];
+			$userdata['username']=$user->user_login;
+			$userdata['password']=$user->password;
+			$userdata['first_name']=get_usermeta($user->ID,'first_name');
+			$userdata['last_name']=get_usermeta($user->ID,'last_name');
+			$userdata['email']=$email;
+			$userdata['item']=$plugin->post_title;
+			$userdata['to']=$email;
+			ResponseMails::send_mails($userdata,'new-user');
+		}
+		$receipt['transaction']=$post['txn_id'];
+		$receipt['first_name']=get_usermeta($user->ID,'first_name');
+		$receipt['last_name']=get_usermeta($user->ID,'last_name');
+		$receipt['email']=$post['payer_email'];
+		$receipt['to']=$email;
+		$receipt['item']=$plugin->post_title;
+		$receipt['cost']=$post['mc_gross'];
+		$receipt['date']=$post['payment_date'];
+		ResponseMails::send_mails($receipt,'receipt');
+		$this->subscribe_customer($receipt['first_name'],$receipt['last_name'],$email,$plugin->post_title);		
+	}	
+	
 	function paypal_payment_recieved($txn,$post){
 		global $membersext;
 		$encoded_id=$post['item_number'];
@@ -504,19 +682,29 @@ Transaction".$post['txn_id'],'From: Art Of WP Shop <shop@artofwp.com>' . "\r\n\\
 		$receipt['cost']=$post['mc_gross'];
 		$receipt['date']=$post['payment_date'];
 		ResponseMails::send_mails($receipt,'receipt');
+		$this->subscribe_customer($receipt['first_name'],$receipt['last_name'],$email,$plugin->post_title);
+		
 	}
-
-	function paypal_pre_add($button){
+	function subscribe_customer($firstname,$lastname,$email,$product){
+		$api = new MCAPI('2ecd208a95866e9a95598c43060cac46-us1');
+	
+		// grab your List's Unique Id by going to http://admin.mailchimp.com/lists/
+		// Click the "settings" link for the list - the Unique Id is at the bottom of that page. 
+		$list_id = "fa7caa4cb8";
+		$merge_vars = array('PRODUCT'=>$product,'FNAME'=>$firstname,'LNAME'=>$lastname);
+		$api->listSubscribe($list_id, $email, $merge_vars, 'html', false, false,false);
+	}
+	function button_pre_add($button){
 		if($_POST['plugin_access']!='0')
 			$button['plugin_access']=$_POST['plugin_access'];
 		return $button;
 	}
 	
-	function paypal_edit($button){
+	function button_edit($button){
 		$this->paypal($button->plugin_access);
 	}
 	
-	function paypal($plugin_name){
+	function button($plugin_name){
 		$plugins=query_posts('post_type=product');
 		?>
 <tr>
@@ -588,13 +776,25 @@ Transaction".$post['txn_id'],'From: Art Of WP Shop <shop@artofwp.com>' . "\r\n\\
 				if($canAccess){
 					$filename=get_post_meta($product_ID,'filename',true);
 					$filepath=WP_CONTENT_DIR."/uploads/plugins/$filename";				
-					header('HTTP/1.1 200 OK');
+/*					header('HTTP/1.1 200 OK');
 					header("Content-disposition: attachment; filename=$filename");
 					header('Content-Type: application/zip');
-					header('Content-Length:'. filesize($filepath));
-					ob_clean();
+					header('Content-Length:'. filesize($filepath));*/
+					
+header("Pragma: public");
+header("Expires: 0");
+header("Cache-Control: must-revalidate, post-check=0, pre-check=0");
+header("Cache-Control: public");
+header("Content-Description: File Transfer");
+header("Content-type: application/octet-stream");
+header("Content-Disposition: attachment; filename=\"".$filename."\"");
+header("Content-Transfer-Encoding: binary");
+header("Content-Length: ".filesize($filepath));
+ob_end_flush();
+@readfile($filepath);					
+/*					ob_clean();
 					flush();
-					readfile($filepath);
+					readfile($filepath);*/
 					exit;
 				}else{
 					header('HTTP/1.1 403 Forbidden');
@@ -623,6 +823,7 @@ Transaction".$post['txn_id'],'From: Art Of WP Shop <shop@artofwp.com>' . "\r\n\\
 					$ip=Http::get_IP();
 					die('You are not allowed to download this file from '.$ip.' && '.$domain);
 				}
+				$this->resetSiteId();
 				$plugin_access=get_usermeta($user->ID,'plugin_access');
 				$user_sites=$plugin_access[$id]['sites'];
 				
@@ -646,13 +847,17 @@ Transaction".$post['txn_id'],'From: Art Of WP Shop <shop@artofwp.com>' . "\r\n\\
 				if($canAccess){
 					$filename=get_post_meta($product_ID,'filename',true);
 					$filepath=WP_CONTENT_DIR."/uploads/plugins/$filename";
-					header('HTTP/1.1 200 OK');
-					header("Content-disposition: attachment; filename=$filename");
-					header('Content-Type: application/zip');
-					header('Content-Length:'. filesize($filepath));
-					ob_clean();
-					flush();
-					readfile($filepath);
+header("Pragma: public");
+header("Expires: 0");
+header("Cache-Control: must-revalidate, post-check=0, pre-check=0");
+header("Cache-Control: public");
+header("Content-Description: File Transfer");
+header("Content-type: application/octet-stream");
+header("Content-Disposition: attachment; filename=\"".$filename."\"");
+header("Content-Transfer-Encoding: binary");
+header("Content-Length: ".filesize($filepath));
+ob_end_flush();
+@readfile($filepath);					
 					exit;
 				}else{
 					header('HTTP/1.1 403 Forbidden');
@@ -669,13 +874,17 @@ Transaction".$post['txn_id'],'From: Art Of WP Shop <shop@artofwp.com>' . "\r\n\\
 					wp_die('The requested file does not exist');
 				$filename=get_post_meta($product_ID,'filename',true);
 				$filepath=WP_CONTENT_DIR."/uploads/free/$filename";				
-				header('HTTP/1.1 200 OK');
-				header("Content-disposition: attachment; filename=$filename");
-				header('Content-Type: application/zip');
-				header('Content-Length:'. filesize($filepath));
-				ob_clean();
-				flush();
-				readfile($filepath);
+header("Pragma: public");
+header("Expires: 0");
+header("Cache-Control: must-revalidate, post-check=0, pre-check=0");
+header("Cache-Control: public");
+header("Content-Description: File Transfer");
+header("Content-type: application/octet-stream");
+header("Content-Disposition: attachment; filename=\"".$filename."\"");
+header("Content-Transfer-Encoding: binary");
+header("Content-Length: ".filesize($filepath));
+ob_end_flush();
+@readfile($filepath);					
 				exit;
 			}
 		}
@@ -727,9 +936,10 @@ Transaction".$post['txn_id'],'From: Art Of WP Shop <shop@artofwp.com>' . "\r\n\\
 					wp_die('The requested file does not exist');
 
 				$siteid=$this->get_siteid();
+
 				if(!$siteid)
 					wp_die('The request is missing registration key and/or email.');
-				
+				$this->resetSiteId();				
 				$user=get_user_by_email($_REQUEST['email']);
 				$plugin_access=get_usermeta($user->ID,'plugin_access');	
 				$user_sites=$plugin_access[$id]['sites'];
@@ -819,10 +1029,27 @@ Transaction".$post['txn_id'],'From: Art Of WP Shop <shop@artofwp.com>' . "\r\n\\
 			$user_email=trim(urldecode($_REQUEST['email']));
 			if(empty($regkey) || empty($user_email))
 				return false;
-			$domain=Http::get_request_domain();
-			$siteid=$regkey.Http::get_IP().$domain;
+			$domain=strtolower(Http::get_request_domain());
+			$siteid=$regkey.$domain;
 			$siteid=hash('md5',$siteid);
 			return $siteid;
+		}
+		function resetSiteId(){/*
+			$id=trim($_REQUEST['id']);
+			$domain=strtolower(Http::get_request_domain());
+			$user_email=trim($_REQUEST['email']);
+			$user=get_user_by_email($user_email);
+			$siteid=$this->get_siteid();
+			$plugin_access=get_usermeta($user->ID,'plugin_access');
+			$user_sites=$plugin_access[$id]['sites'];
+			foreach($user_sites as $oldsiteid => $site)
+				if($site==$domain){
+					unset($user_sites[$oldsiteid]);
+					$user_sites[$siteid]=$domain;
+					break;
+				}
+			$plugin_access[$id]['sites']=$user_sites;
+			update_usermeta($user->ID,'plugin_access',$plugin_access);	*/		
 		}
 		function unregister(){
 			$id=trim($_REQUEST['id']);
@@ -830,6 +1057,7 @@ Transaction".$post['txn_id'],'From: Art Of WP Shop <shop@artofwp.com>' . "\r\n\\
 			$user_email=trim($_REQUEST['email']);
 			$user=get_user_by_email($user_email);
 			$siteid=$this->get_siteid();
+			$this->resetSiteId();
 			$plugin_access=get_usermeta($user->ID,'plugin_access');
 			$user_sites=$plugin_access[$id]['sites'];
 			unset($user_sites[$siteid]);

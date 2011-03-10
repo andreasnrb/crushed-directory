@@ -4,8 +4,8 @@ class Plugins{
 		global $current_user;
 		global $wpdb;
 //		$wpdb->set_blog_id(1,1);
-		$plugins=$wpdb->get_results($wpdb->prepare("SELECT `ID`,`post_title`,`post_name`,`post_excerpt`,`post_content` FROM $wpdb->posts  WHERE `post_type`='product'"));// AND `user`=%s",$current_user->ID));
-		$memberships=Memberships::get_memberships_for_user($current_user->ID);		
+		$plugins=$wpdb->get_results($wpdb->prepare("SELECT `ID`,`post_title`,`post_name`,`post_excerpt`,`post_content` FROM $wpdb->posts  WHERE `post_type`='product' ORDER BY post_title ASC"));// AND `user`=%s",$current_user->ID));
+		$memberships=Memberships::get_memberships_for_user($current_user->ID);
 		foreach($plugins as $i => $plugin){
 			$plugin->file=get_post_meta($plugin->ID,'filename',true);
 			$plugin->version=get_post_meta($plugin->ID,'version',true);			
