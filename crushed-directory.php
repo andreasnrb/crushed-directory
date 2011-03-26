@@ -701,7 +701,7 @@ Transaction".$post['txn_id'],'From: Art Of WP Shop <shop@artofwp.com>' . "\r\n\\
 	}
 	
 	function button_edit($button){
-		$this->paypal($button->plugin_access);
+		$this->button($button->plugin_access);
 	}
 	
 	function button($plugin_name){
@@ -1030,7 +1030,7 @@ ob_end_flush();
 			if(empty($regkey) || empty($user_email))
 				return false;
 			$domain=strtolower(Http::get_request_domain());
-			$siteid=$regkey.$domain;
+			$siteid=$regkey.Http::get_IP().$domain;
 			$siteid=hash('md5',$siteid);
 			return $siteid;
 		}
