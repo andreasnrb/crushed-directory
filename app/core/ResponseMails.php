@@ -22,7 +22,7 @@ class ResponseMails{
 	}
 	static function send_mails($data,$event){
 		$mails=self::get_mails_for_event($event);
-		paypal_log_info('mails',print_r($mails,true));
+//		paypal_log_info('mails',print_r($mails,true));
 		$from=(object)array('name'=>'Shop Art Of WordPress', 'email'=>'support@artofwp.com');
 		foreach($mails as $mail){
 			$subject=$mail->post_title;			
@@ -32,10 +32,10 @@ class ResponseMails{
 				$subject=str_replace($key,$value,$subject);
 				$message_plain=str_replace($key,$value,$message_plain);				
 			}
-			paypal_log_info('mailsubject',$subject);
-			paypal_log_info('mailmessage',$message_plain);						
+			//paypal_log_info('mailsubject',$subject);
+			//paypal_log_info('mailmessage',$message_plain);						
 			$result=self::send_mail($from,$data['to'],$subject,$message_plain);
-			paypal_log_info('aftersend_mail',$result);
+			//paypal_log_info('aftersend_mail',$result);
 		}
 	}
 	static function merge_mail($data,$event){
